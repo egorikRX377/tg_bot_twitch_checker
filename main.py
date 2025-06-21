@@ -16,7 +16,9 @@ load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
+TWITCH_REFRESH_TOKEN = os.getenv("TWITCH_REFRESH_TOKEN")
 TWITCH_CHANNEL_ID = os.getenv("TWITCH_CHANNEL_ID")
 GIVEAWAY_LINK = "https://t.me/wickeddchannel/491"
 TWITCH_CHANNEL_NAME = "wickeddwb"
@@ -29,15 +31,46 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def get_twitch_token():
+    global TWITCH_ACCESS_TOKEN
     if not TWITCH_ACCESS_TOKEN:
-        logger.error("Токен доступа Twitch не найден в переменной окружения")
+        logger.error("Токен доступа Twitch не найден")
+        return None
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}",
+    }
+    response = requests.get("https://api.twitch.tv/helix/users?login=wickeddwb", headers=headers)
+    if response.status_code == 401:
+        logger.warning("Токен истек, обновляем")
+        new_access_token, new_refresh_token = refresh_twitch_token(TWITCH_REFRESH_TOKEN)
+        if new_access_token:
+            TWITCH_ACCESS_TOKEN = new_access_token
+            os.environ["TWITCH_ACCESS_TOKEN"] = new_access_token
+            if new_refresh_token:
+                os.environ["TWITCH_REFRESH_TOKEN"] = new_refresh_token
+            return new_access_token
         return None
     return TWITCH_ACCESS_TOKEN
+
+def refresh_twitch_token(refresh_token):
+    url = "https://id.twitch.tv/oauth2/token"
+    params = {
+        "client_id": TWITCH_CLIENT_ID,
+        "client_secret": TWITCH_CLIENT_SECRET,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }
+    response = requests.post(url, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        logger.info(f"Токен обновлен: {data['access_token']}")
+        return data["access_token"], data.get("refresh_token")
+    logger.error(f"Ошибка обновления токена: {response.text}")
+    return None, None
 
 def check_twitch_follower(twitch_username):
     access_token = get_twitch_token()
     if not access_token:
-        logger.error("Токен доступа отсутствует")
         return False
 
     headers = {
